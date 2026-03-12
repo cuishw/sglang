@@ -268,6 +268,39 @@ def flashinfer_allreduce_residual_rmsnorm(
     return norm_out, residual_out
 
 
+def probe_flashinfer_allreduce_fusion_available() -> bool:
+    """Probe whether FlashInfer allreduce fusion workspace can be created.
+
+    This is called during server startup to check if the required infrastructure
+    (e.g., NVIDIA IMEX daemon for MNNVL symmetric memory) is available before
+    auto-enabling the fusion feature. Without this check, workspace creation
+    fails at model init time with cudaErrorInsufficientDriver, returning
+    (None, None) from a custom op that torch.compile expects to return tensors,
+    crashing the piecewise CUDA graph.
+    """
+    if _flashinfer_comm is None:
+        return False
+
+    try:
+        ws = _flashinfer_comm.create_allreduce_fusion_workspace(
+            backend="trtllm",
+            world_size=2,
+            rank=0,
+            max_token_num=4,
+            hidden_dim=128,
+            dtype=torch.float16,
+            force_oneshot_support=False,
+        )
+        ws.destroy()
+        return True
+    except Exception as e:
+        logger.warning(
+            f"FlashInfer allreduce fusion probe failed: {e}. "
+            f"Disabling allreduce fusion."
+        )
+        return False
+
+
 def cleanup_flashinfer_workspace():
     global _workspace_manager
     if _workspace_manager is not None:

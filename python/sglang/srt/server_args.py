@@ -1630,10 +1630,20 @@ class ServerArgs:
             if is_blackwell_supported():
                 # workaround for https://github.com/flashinfer-ai/flashinfer/issues/2006
                 if not self.enable_dp_attention and self.nnodes == 1:
-                    self.enable_flashinfer_allreduce_fusion = True
-                    logger.info(
-                        "Enable FlashInfer AllReduce Fusion on sm100 for GptOssForCausalLM"
+                    from sglang.srt.layers.flashinfer_comm_fusion import (
+                        probe_flashinfer_allreduce_fusion_available,
                     )
+
+                    if probe_flashinfer_allreduce_fusion_available():
+                        self.enable_flashinfer_allreduce_fusion = True
+                        logger.info(
+                            "Enable FlashInfer AllReduce Fusion on sm100 for GptOssForCausalLM"
+                        )
+                    else:
+                        logger.warning(
+                            "FlashInfer allreduce fusion workspace unavailable on sm100. "
+                            "Disabling fusion."
+                        )
             if not self.enable_dp_attention and self.nnodes == 1 and is_hip():
                 # TODO (Hubert): Put this back later
                 # self.enable_aiter_allreduce_fusion = True
@@ -1985,7 +1995,17 @@ class ServerArgs:
             and not is_h20_device
             and self.moe_a2a_backend == "none"
         ):
-            self.enable_flashinfer_allreduce_fusion = True
+            from sglang.srt.layers.flashinfer_comm_fusion import (
+                probe_flashinfer_allreduce_fusion_available,
+            )
+
+            if probe_flashinfer_allreduce_fusion_available():
+                self.enable_flashinfer_allreduce_fusion = True
+            else:
+                logger.warning(
+                    "FlashInfer allreduce fusion workspace unavailable "
+                    "(IMEX daemon may not be running). Disabling fusion."
+                )
 
     def _handle_mamba_radix_cache(
         self,
